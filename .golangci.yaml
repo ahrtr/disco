@@ -1,0 +1,22 @@
+version: "2"
+
+linters:
+  exclusions:
+    rules:
+      # TODO: resolve all suppressed lint errors and remove these exclusions.
+
+      # Unhandled errors in defer statements are acceptable; cleanup calls
+      # (Close, unlock, etc.) cannot propagate errors meaningfully after the
+      # main work is complete.
+      - linters: [errcheck]
+        source: "^\\s+defer "
+
+      # fmt.Fprintf to an http.ResponseWriter does not need its error checked:
+      # any write failure will surface on the next write or flush.
+      - linters: [errcheck]
+        text: "Error return value of `fmt\\.Fprintf` is not checked"
+
+      # m.unlock inside the internal mutex is a best-effort cleanup call.
+      - linters: [errcheck]
+        path: "provider/etcd/mutex\\.go"
+        text: "Error return value of `m\\.unlock` is not checked"
