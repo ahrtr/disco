@@ -26,7 +26,7 @@ func defaultProviderOptions() providerOptions {
 
 // WithContext sets the parent context for the session's lease keepalive loop.
 // When the context is cancelled the keepalive stops, the lease expires, and
-// any Session obtained from this service will have its Done channel closed.
+// the service's Done channel is closed.
 // If not set, the etcd client's own context is used.
 func WithContext(ctx context.Context) ProviderOption {
 	return func(o *providerOptions) {
@@ -35,6 +35,7 @@ func WithContext(ctx context.Context) ProviderOption {
 }
 
 // WithDefaultTTL sets the default lease TTL. Defaults to 30 s.
+// Values below 5 s are clamped to 5 s by NewLock.
 func WithDefaultTTL(d time.Duration) ProviderOption {
 	return func(o *providerOptions) {
 		o.cfg.DefaultTTL = d

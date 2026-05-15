@@ -5,8 +5,8 @@ import "errors"
 // ErrNoToken is returned when a request carries no fencing token.
 var ErrNoToken = errors.New("fencing: no token present in request")
 
-// ErrTokenStale is returned by a Guard when the incoming token is lower than
-// the highest token the resource has already accepted.
+// ErrTokenStale is returned when an incoming token is lower than the highest
+// token the resource has already accepted.
 var ErrTokenStale = errors.New("fencing: token is stale")
 
 // Token is a monotonically increasing integer that identifies a lock

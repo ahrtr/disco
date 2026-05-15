@@ -23,11 +23,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/ahrtr/disco/lock"
+	"github.com/ahrtr/disco/lock/fencing"
 	etcdprovider "github.com/ahrtr/disco/provider/etcd"
 )
 
@@ -72,27 +74,27 @@ func main() {
 
 	// ── Step 1: Client A acquires the lock ────────────────────────────────────
 	log.Println("Client A: acquiring lock …")
-	sessionA, err := providerA.Lock(ctx)
+	grantA, err := providerA.Lock(ctx)
 	if err != nil {
 		log.Fatalf("client A lock: %v", err)
 	}
-	log.Printf("Client A: lock acquired  fencing_token=%d  TTL=5s", sessionA.FencingToken())
+	log.Printf("Client A: lock acquired  fencing_token=%d  TTL=5s", grantA.FencingToken)
 
 	// ── Step 2: Client B waits for the lock in a separate goroutine ───────────
 	bWritten := make(chan struct{})
 	go func() {
 		log.Println("Client B: waiting for the lock …")
-		sessionB, err := providerB.Lock(ctx)
+		grantB, err := providerB.Lock(ctx)
 		if err != nil {
 			log.Fatalf("client B lock: %v", err)
 		}
-		log.Printf("Client B: lock acquired  fencing_token=%d", sessionB.FencingToken())
+		log.Printf("Client B: lock acquired  fencing_token=%d", grantB.FencingToken)
 
 		log.Println("Client B: writing to resource …")
-		doWrite("Client B", sessionB)
+		doWrite("Client B", grantB)
 		close(bWritten)
 
-		if err := sessionB.Unlock(ctx); err != nil {
+		if err := providerB.Unlock(ctx); err != nil {
 			log.Printf("client B unlock: %v", err)
 		} else {
 			log.Println("Client B: lock released")
@@ -115,17 +117,17 @@ func main() {
 	// A's grant still holds the old fencing token T in memory, but the resource
 	// server's high-water mark is now T'. Since T < T', the write is rejected.
 	log.Println("Client A: woke up — attempting write with stale token …")
-	doWrite("Client A", sessionA)
+	doWrite("Client A", grantA)
 }
 
 // doWrite sends a POST /write request to the resource server with the
-// session's fencing token attached via the X-Fencing-Token header.
-func doWrite(name string, session *lock.Session) {
+// grant's fencing token attached via the X-Fencing-Token header.
+func doWrite(name string, grant *lock.Grant) {
 	req, err := http.NewRequest(http.MethodPost, resourceWriteURL, nil)
 	if err != nil {
 		log.Fatalf("build request: %v", err)
 	}
-	session.InjectHTTP(req)
+	fencing.InjectHTTP(req, grant.Token())
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -133,5 +135,5 @@ func doWrite(name string, session *lock.Session) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	log.Printf("%s: %s — %s", name, resp.Status, body)
+	log.Printf("%s: %s — %s", name, resp.Status, strings.TrimSpace(string(body)))
 }

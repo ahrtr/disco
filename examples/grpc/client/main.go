@@ -30,6 +30,7 @@ import (
 
 	"github.com/ahrtr/disco/examples/grpc/pb"
 	"github.com/ahrtr/disco/lock"
+	"github.com/ahrtr/disco/lock/fencing"
 	etcdprovider "github.com/ahrtr/disco/provider/etcd"
 )
 
@@ -85,27 +86,27 @@ func main() {
 
 	// ── Step 1: Client A acquires the lock ────────────────────────────────────
 	log.Println("Client A: acquiring lock …")
-	sessionA, err := providerA.Lock(ctx)
+	grantA, err := providerA.Lock(ctx)
 	if err != nil {
 		log.Fatalf("client A lock: %v", err)
 	}
-	log.Printf("Client A: lock acquired  fencing_token=%d  TTL=5s", sessionA.FencingToken())
+	log.Printf("Client A: lock acquired  fencing_token=%d  TTL=5s", grantA.FencingToken)
 
 	// ── Step 2: Client B waits for the lock in a goroutine ───────────────────
 	bWritten := make(chan struct{})
 	go func() {
 		log.Println("Client B: waiting for the lock …")
-		sessionB, err := providerB.Lock(ctx)
+		grantB, err := providerB.Lock(ctx)
 		if err != nil {
 			log.Fatalf("client B lock: %v", err)
 		}
-		log.Printf("Client B: lock acquired  fencing_token=%d", sessionB.FencingToken())
+		log.Printf("Client B: lock acquired  fencing_token=%d", grantB.FencingToken)
 
 		log.Println("Client B: calling Resource/Write …")
-		doWrite(ctx, "Client B", rc, sessionB)
+		doWrite(ctx, "Client B", rc, grantB)
 		close(bWritten)
 
-		if err := sessionB.Unlock(ctx); err != nil {
+		if err := providerB.Unlock(ctx); err != nil {
 			log.Printf("client B unlock: %v", err)
 		} else {
 			log.Println("Client B: lock released")
@@ -127,14 +128,13 @@ func main() {
 	// A's grant still holds the old token in memory, but the resource server's
 	// high-water mark is now higher. The server rejects the RPC.
 	log.Println("Client A: woke up — calling Resource/Write with stale token …")
-	doWrite(ctx, "Client A", rc, sessionA)
+	doWrite(ctx, "Client A", rc, grantA)
 }
 
-// doWrite calls pb.Resource/Write, attaching the session's fencing token as
+// doWrite calls pb.Resource/Write, attaching the grant's fencing token as
 // gRPC metadata so the server's guard interceptor can validate it.
-func doWrite(ctx context.Context, name string, rc pb.ResourceClient, session *lock.Session) {
-	// session.GRPCMetadata() returns metadata containing the x-fencing-token key.
-	outCtx := metadata.NewOutgoingContext(ctx, session.GRPCMetadata())
+func doWrite(ctx context.Context, name string, rc pb.ResourceClient, grant *lock.Grant) {
+	outCtx := metadata.NewOutgoingContext(ctx, fencing.ToGRPCMetadata(grant.Token()))
 
 	resp, err := rc.Write(outCtx, &pb.WriteRequest{
 		Data: fmt.Sprintf("hello from %s", name),

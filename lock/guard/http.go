@@ -9,8 +9,9 @@ import (
 // HTTPMiddleware is an HTTP middleware that extracts the fencing token from
 // every incoming request and validates it against the Guard before calling next.
 //
-// Requests missing the X-Fencing-Token header are rejected with 400 Bad
-// Request. Requests carrying a stale token are rejected with 409 Conflict.
+// Requests with a missing or malformed X-Fencing-Token header are rejected
+// with 400 Bad Request. Requests carrying a stale token are rejected with
+// 409 Conflict.
 //
 // Use it directly as a handler wrapper:
 //

@@ -9,7 +9,7 @@ import (
 	v3 "go.etcd.io/etcd/client/v3"
 )
 
-// session represents a lease kept alive for the lifetime of a client.
+// session represents a lease kept alive for the lifetime of a Provider.
 type session struct {
 	client *v3.Client
 	opts   *sessionOptions
@@ -81,6 +81,7 @@ func (s *session) close() error {
 	return err
 }
 
+// sessionOptions holds the resolved configuration for a session.
 type sessionOptions struct {
 	ttl int
 	ctx context.Context

@@ -121,23 +121,23 @@ func main() {
 
 	// ── Step 1: Client A acquires the lock ────────────────────────────────────
 	log.Println("Client A: acquiring lock …")
-	sessionA, err := providerA.Lock(ctx)
+	grantA, err := providerA.Lock(ctx)
 	if err != nil {
 		log.Fatalf("client A lock: %v", err)
 	}
-	log.Printf("Client A: lock acquired  fencing_token=%d  TTL=5s", sessionA.FencingToken())
+	log.Printf("Client A: lock acquired  fencing_token=%d  TTL=5s", grantA.FencingToken)
 
 	// ── Step 2: Client B waits for the lock in a separate goroutine ───────────
 	bWritten := make(chan struct{})
 	go func() {
 		log.Println("Client B: waiting for the lock …")
-		sessionB, err := providerB.Lock(ctx)
+		grantB, err := providerB.Lock(ctx)
 		if err != nil {
 			log.Fatalf("client B lock: %v", err)
 		}
-		log.Printf("Client B: lock acquired  fencing_token=%d", sessionB.FencingToken())
+		log.Printf("Client B: lock acquired  fencing_token=%d", grantB.FencingToken)
 
-		if err := db.Write(sessionB.FencingToken(), "hello from client B"); err != nil {
+		if err := db.Write(grantB.Token(), "hello from client B"); err != nil {
 			log.Printf("Client B: write rejected: %v", err)
 		} else {
 			data, tok := db.State()
@@ -145,7 +145,7 @@ func main() {
 		}
 		close(bWritten)
 
-		if err := sessionB.Unlock(ctx); err != nil {
+		if err := providerB.Unlock(ctx); err != nil {
 			log.Printf("client B unlock: %v", err)
 		} else {
 			log.Println("Client B: lock released")
@@ -159,13 +159,15 @@ func main() {
 	cancelA()
 
 	// ── Step 4: Wait for Client B to write ────────────────────────────────────
+	// Blocks until B has acquired the lock (after A's lease expires ~5s from
+	// now) and written to the DB, advancing the stored fencing token to T'.
 	<-bWritten
 
 	// ── Step 5: Client A wakes up and tries to write with its stale token ─────
 	// The DB rejects it because A's token is lower than the stored high-water
 	// mark — no in-memory guard or middleware needed.
 	log.Println("Client A: woke up — attempting write with stale token …")
-	if err := db.Write(sessionA.FencingToken(), "hello from client A"); err != nil {
+	if err := db.Write(grantA.Token(), "hello from client A"); err != nil {
 		if errors.Is(err, fencing.ErrTokenStale) {
 			log.Printf("Client A: write rejected by DB — %v", err)
 		} else {

@@ -21,5 +21,5 @@
 //
 // The session manages its own lease keepalive goroutine. Callers do not need
 // to renew the lease manually; they should instead monitor the channel returned
-// by Session.Done to detect involuntary lease loss.
+// by Service.Done to detect involuntary lease loss.
 package etcd
