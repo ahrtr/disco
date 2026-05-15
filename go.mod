@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	go.etcd.io/etcd/api/v3 v3.6.0-alpha.0.0.20260506150449-0cbc031e7f22
-	go.etcd.io/etcd/client/v3 v3.6.0-alpha.0.0.20260506150449-0cbc031e7f22
+	go.etcd.io/etcd/client/v3 v3.7.0-alpha.0
 	go.uber.org/zap v1.28.0
 	google.golang.org/grpc v1.81.1
 )
