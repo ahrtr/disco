@@ -60,7 +60,7 @@ if `token >= mark` the request is accepted and the mark advances; if
 
 ```
 disco/
-├── lock/                   # Distributed lock — Service interface, Grant, Session, errors
+├── lock/                   # Distributed lock — Service interface, Grant, errors
 │   ├── fencing/            # Token type + HTTP/gRPC transport helpers
 │   └── guard/              # Server-side validator: high-water mark, HTTP middleware, gRPC interceptors
 ├── provider/               # Backend implementations (shared across features)
@@ -95,11 +95,12 @@ Client A reappears as zombie ──► writes to DB with token 34 → REJECTED (
 
 ```go
 import (
+    "log"
     "net/http"
 
     clientv3 "go.etcd.io/etcd/client/v3"
     "google.golang.org/grpc/metadata"
-    "github.com/ahrtr/disco/lock"
+    "github.com/ahrtr/disco/lock/fencing"
     etcdprovider "github.com/ahrtr/disco/provider/etcd"
 )
 
@@ -110,24 +111,25 @@ defer cli.Close()
 svc, _ := etcdprovider.NewLock(cli, "/locks/my-resource")
 defer svc.Close()
 
-// Blocking acquire.
-session, err := svc.Lock(ctx)
-if err != nil { ... }
-defer session.Unlock(ctx)
-
 // React to involuntary lease loss in the background.
+// Done is a property of the service lifetime, not of any individual Lock call.
 go func() {
-    <-session.Done()
-    log.Printf("lock lost: %v", session.Err())
+    <-svc.Done()
+    log.Printf("lock lost: %v", svc.Err())
     // stop accessing the resource
 }()
 
+// Blocking acquire — returns a Grant with the fencing token and lease metadata.
+grant, err := svc.Lock(ctx)
+if err != nil { ... }
+defer svc.Unlock(ctx)
+
 // Stamp every resource request with the fencing token.
 req, _ := http.NewRequest("POST", resourceURL, body)
-session.InjectHTTP(req)
+fencing.InjectHTTP(req, grant.Token())
 
 // For gRPC:
-outCtx := metadata.NewOutgoingContext(ctx, session.GRPCMetadata())
+outCtx := metadata.NewOutgoingContext(ctx, fencing.ToGRPCMetadata(grant.Token()))
 ```
 
 ### Resource guard (server side)
@@ -157,7 +159,7 @@ if err := g.Check(incomingToken); err != nil {
 | Decision                          | Rationale                                                                                                                                                                       |
 |-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Cluster revision as fencing token | etcd cluster revision is globally ordered and increases on every write; the revision recorded when the lock is acquired is always strictly higher than any previous acquisition |
-| Provider manages keepalive        | The session's keepalive goroutine runs internally; callers watch `Session.Done()` instead of calling `Renew()`                                                                  |
+| Provider manages keepalive        | The session's keepalive goroutine runs internally; callers watch `svc.Done()` instead of calling `Renew()`                                                                      |
 | `Guard` high-water mark           | Atomic CAS loop with no locks; accepts `token >= mark`, rejects `token < mark`                                                                                                  |
 | Caller-owned etcd client          | The caller creates, configures, and closes the etcd client; the provider never closes it                                                                                        |
 | No `init()` auto-registration     | Providers are constructed explicitly; no hidden init-time side effects                                                                                                          |

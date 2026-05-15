@@ -50,6 +50,6 @@ func main() {
 	}
 
 	log.Println("grpc/resource listening on :50051")
-	log.Println("  pb.Resource/Write  — requires x-fencing-token metadata")
+	log.Println("  pb.Resource/Write — requires x-fencing-token metadata")
 	log.Fatal(srv.Serve(lis))
 }

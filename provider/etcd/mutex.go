@@ -21,12 +21,14 @@ var (
 type mutex struct {
 	s *session
 
-	pfx   string
-	myKey string
-	myRev int64
-	hdr   *pb.ResponseHeader
+	pfx   string             // key prefix; all candidate keys are put under pfx
+	myKey string             // this session's candidate key in etcd
+	myRev int64              // create revision of myKey; lowest revision is the lock holder
+	hdr   *pb.ResponseHeader // response header from the last successful lock acquisition
 }
 
+// newMutex returns a mutex for pfx backed by session s.
+// All lock keys are stored under pfx + "/".
 func newMutex(s *session, pfx string) *mutex {
 	return &mutex{s, pfx + "/", "", -1, nil}
 }
@@ -42,13 +44,14 @@ func (m *mutex) tryLock(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// if no key on prefix / the minimum rev is key, already hold the lock
+	// No key exists under the prefix, or our key has the lowest create revision:
+	// we are already the lock holder.
 	ownerKey := resp.Responses[1].GetResponseRange().Kvs
 	if len(ownerKey) == 0 || ownerKey[0].CreateRevision == m.myRev {
 		m.hdr = resp.Header
 		return nil
 	}
-	// Cannot lock, so delete the key
+	// Another session holds the lock; clean up our candidate key and return.
 	if _, err := m.s.client.Delete(ctx, m.myKey); err != nil {
 		return err
 	}
@@ -67,7 +70,8 @@ func (m *mutex) lock(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// if no key on prefix / the minimum rev is key, already hold the lock
+	// No key exists under the prefix, or our key has the lowest create revision:
+	// we are already the lock holder.
 	ownerKey := resp.Responses[1].GetResponseRange().Kvs
 	if len(ownerKey) == 0 || ownerKey[0].CreateRevision == m.myRev {
 		m.hdr = resp.Header
@@ -119,6 +123,8 @@ func (m *mutex) tryAcquire(ctx context.Context) (*v3.TxnResponse, error) {
 	return resp, nil
 }
 
+// unlock deletes this session's candidate key, releasing the lock.
+// Returns errLockReleased if the key has already been deleted.
 func (m *mutex) unlock(ctx context.Context) error {
 	if m.myKey == "" || m.myRev <= 0 || m.myKey == "\x00" {
 		return errLockReleased
@@ -139,6 +145,8 @@ func (m *mutex) unlock(ctx context.Context) error {
 // header returns the response header received from etcd on acquiring the lock.
 func (m *mutex) header() *pb.ResponseHeader { return m.hdr }
 
+// waitDelete blocks until a DELETE event is observed for key at or after rev,
+// or until ctx is canceled or the watch channel is closed unexpectedly.
 func waitDelete(ctx context.Context, client *v3.Client, key string, rev int64) error {
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()

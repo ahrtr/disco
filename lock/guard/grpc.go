@@ -13,9 +13,9 @@ import (
 // UnaryInterceptor returns a gRPC unary server interceptor that validates the
 // fencing token carried in incoming metadata before calling the handler.
 //
-// Requests missing the fencing-token metadata key are rejected with
-// codes.InvalidArgument. Requests carrying a stale token are rejected with
-// codes.Aborted.
+// Requests with a missing or malformed fencing-token metadata key are rejected
+// with codes.InvalidArgument. Requests carrying a stale token are rejected
+// with codes.Aborted.
 //
 // Register it when creating the server:
 //
