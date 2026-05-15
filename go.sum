@@ -28,8 +28,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
-go.etcd.io/etcd/api/v3 v3.6.0-alpha.0.0.20260506150449-0cbc031e7f22 h1:bg6tYNhyawDGZPkIfLbpbUOmL7mOj0spQqKF8UBxZCg=
-go.etcd.io/etcd/api/v3 v3.6.0-alpha.0.0.20260506150449-0cbc031e7f22/go.mod h1:YB2A4FMXR89cWqNh4Vth1H45Mt5yveGAEEBz6jc6acs=
+go.etcd.io/etcd/api/v3 v3.7.0-alpha.0 h1:ZuBcHEHwqRfOOTAfJ7TXpUV0Xz7WpJk0dLIgEpKlzBI=
+go.etcd.io/etcd/api/v3 v3.7.0-alpha.0/go.mod h1:shJrxAPl7APX7yMpnjzjzM3u3LJE/pV6iG4YPFcTOa0=
 go.etcd.io/etcd/client/pkg/v3 v3.6.0-alpha.0.0.20260506150449-0cbc031e7f22 h1:DfS1gkP6sFPwGue0RlWuHJbiZJEPIM24ub4R/S7Ba7E=
 go.etcd.io/etcd/client/pkg/v3 v3.6.0-alpha.0.0.20260506150449-0cbc031e7f22/go.mod h1:VHoC9IjJ7O54qIm5GR7qhn6YfkWacenETRpgR5FAvTw=
 go.etcd.io/etcd/client/v3 v3.6.0-alpha.0.0.20260506150449-0cbc031e7f22 h1:c2bwkgD5T+MZMq+gtZE4+1heKshl7V8Y9TYkfpUQrDc=
