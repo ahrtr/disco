@@ -4,7 +4,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: "direct"
+    groups:
+      etcd:
+        patterns:
+          - "go.etcd.io/*"
 
   - package-ecosystem: github-actions
     directory: /
