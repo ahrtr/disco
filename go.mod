@@ -6,7 +6,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.7.0-rc.0
 	go.etcd.io/etcd/client/v3 v3.7.0-rc.0
 	go.uber.org/zap v1.28.0
-	google.golang.org/grpc v1.82.0
+	google.golang.org/grpc v1.82.1
 )
 
 require (
