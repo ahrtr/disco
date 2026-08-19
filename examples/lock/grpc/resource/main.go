@@ -7,11 +7,11 @@
 //
 // Run the resource server:
 //
-//	go run ./examples/grpc/resource
+//	go run ./examples/lock/grpc/resource
 //
 // Then run the client in a separate terminal:
 //
-//	go run ./examples/grpc/client
+//	go run ./examples/lock/grpc/client
 package main
 
 import (
@@ -22,8 +22,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/ahrtr/disco/examples/grpc/pb"
-	"github.com/ahrtr/disco/lock/guard"
+	"github.com/ahrtr/disco/examples/lock/grpc/pb"
+	"github.com/ahrtr/disco/fencing/guard"
 )
 
 type resourceServer struct {

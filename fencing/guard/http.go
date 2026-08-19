@@ -3,7 +3,7 @@ package guard
 import (
 	"net/http"
 
-	"github.com/ahrtr/disco/lock/fencing"
+	"github.com/ahrtr/disco/fencing"
 )
 
 // HTTPMiddleware is an HTTP middleware that extracts the fencing token from

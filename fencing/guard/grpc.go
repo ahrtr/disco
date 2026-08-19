@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/ahrtr/disco/lock/fencing"
+	"github.com/ahrtr/disco/fencing"
 )
 
 // UnaryInterceptor returns a gRPC unary server interceptor that validates the

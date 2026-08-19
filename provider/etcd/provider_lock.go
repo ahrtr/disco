@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
@@ -43,19 +42,9 @@ type Provider struct {
 //
 //	svc, err := etcd.NewLock(cli, "/locks/my-resource")
 func NewLock(client *clientv3.Client, key string, opts ...ProviderOption) (lock.Service, error) {
-	o := defaultProviderOptions()
-	for _, opt := range opts {
-		opt(&o)
-	}
-
-	ttlSecs := int(o.cfg.defaultTTL().Seconds())
-	if ttlSecs < 5 {
-		ttlSecs = 5
-	}
-
-	session, err := newSession(o.ctx, client, withTTL(ttlSecs))
+	session, err := newProviderSession(client, key, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("etcd provider: create session for %q: %w", key, err)
+		return nil, err
 	}
 
 	return &Provider{
@@ -126,6 +115,5 @@ func (p *Provider) newGrant() *lock.Grant {
 	return &lock.Grant{
 		Key:          p.key,
 		FencingToken: p.mutex.header().Revision,
-		ExpiresAt:    time.Now().Add(time.Duration(p.session.opts.ttl) * time.Second),
 	}
 }

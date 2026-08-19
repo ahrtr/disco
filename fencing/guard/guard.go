@@ -3,7 +3,7 @@ package guard
 import (
 	"sync/atomic"
 
-	"github.com/ahrtr/disco/lock/fencing"
+	"github.com/ahrtr/disco/fencing"
 )
 
 // Guard is a concurrency-safe high-water mark for fencing tokens.

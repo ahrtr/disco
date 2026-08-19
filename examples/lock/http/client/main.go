@@ -11,11 +11,13 @@
 //  6. The resource rejects A's request with 409 Conflict.
 //
 // Prerequisites:
-//   - A running etcd cluster reachable at localhost:2379.
-//   - The HTTP resource server running in a separate terminal:
-//     go run ./examples/http/resource
 //
-//	go run ./examples/http/client
+//   - A running etcd cluster reachable at localhost:2379.
+//
+//   - The HTTP resource server running in a separate terminal:
+//     go run ./examples/lock/http/resource
+//
+//     go run ./examples/lock/http/client
 package main
 
 import (
@@ -28,8 +30,8 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
+	"github.com/ahrtr/disco/fencing"
 	"github.com/ahrtr/disco/lock"
-	"github.com/ahrtr/disco/lock/fencing"
 	etcdprovider "github.com/ahrtr/disco/provider/etcd"
 )
 
@@ -72,7 +74,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// ── Step 1: Client A acquires the lock ────────────────────────────────────
+	// ── Step 1: Client A acquires the lock
 	log.Println("Client A: acquiring lock …")
 	grantA, err := providerA.Lock(ctx)
 	if err != nil {
@@ -80,7 +82,7 @@ func main() {
 	}
 	log.Printf("Client A: lock acquired  fencing_token=%d  TTL=5s", grantA.FencingToken)
 
-	// ── Step 2: Client B waits for the lock in a separate goroutine ───────────
+	// ── Step 2: Client B waits for the lock in a separate goroutine
 	bWritten := make(chan struct{})
 	go func() {
 		log.Println("Client B: waiting for the lock …")
@@ -101,19 +103,19 @@ func main() {
 		}
 	}()
 
-	// ── Step 3: Client A gets stuck ───────────────────────────────────────────
+	// ── Step 3: Client A gets stuck
 	// cancelA stops the session's keepalive goroutine. With no renewals coming
 	// in, etcd expires the lease after the 5s TTL and automatically releases
 	// the lock, which unblocks Client B.
 	log.Println("Client A: got stuck (keepalives stopped — lease expires in 5s) …")
 	cancelA()
 
-	// ── Step 4: Wait for Client B to write ────────────────────────────────────
+	// ── Step 4: Wait for Client B to write
 	// Blocks until B has acquired the lock (after A's lease expires ~5s from
 	// now) and written to the resource, advancing the high-water mark to T'.
 	<-bWritten
 
-	// ── Step 5: Client A wakes up and tries to write ──────────────────────────
+	// ── Step 5: Client A wakes up and tries to write
 	// A's grant still holds the old fencing token T in memory, but the resource
 	// server's high-water mark is now T'. Since T < T', the write is rejected.
 	log.Println("Client A: woke up — attempting write with stale token …")
