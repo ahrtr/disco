@@ -10,11 +10,13 @@
 //  5. Client A wakes up, calls pb.Resource/Write with its stale token — rejected.
 //
 // Prerequisites:
-//   - A running etcd cluster reachable at localhost:2379.
-//   - The gRPC resource server running in a separate terminal:
-//     go run ./examples/grpc/resource
 //
-//	go run ./examples/grpc/client
+//   - A running etcd cluster reachable at localhost:2379.
+//
+//   - The gRPC resource server running in a separate terminal:
+//     go run ./examples/lock/grpc/resource
+//
+//     go run ./examples/lock/grpc/client
 package main
 
 import (
@@ -28,16 +30,16 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/ahrtr/disco/examples/grpc/pb"
+	"github.com/ahrtr/disco/examples/lock/grpc/pb"
+	"github.com/ahrtr/disco/fencing"
 	"github.com/ahrtr/disco/lock"
-	"github.com/ahrtr/disco/lock/fencing"
 	etcdprovider "github.com/ahrtr/disco/provider/etcd"
 )
 
 const lockKey = "/locks/my-resource"
 
 func main() {
-	// ── gRPC connection to the resource server ────────────────────────────────
+	// ── gRPC connection to the resource server
 	// ForceCodec tells this connection to use the JSON codec registered by the
 	// pb package. This does not affect the etcd client's connection, which
 	// continues to use real protobuf encoding on its own separate connection.
@@ -51,7 +53,7 @@ func main() {
 	defer conn.Close()
 	rc := pb.NewResourceClient(conn)
 
-	// ── etcd client + lock providers ──────────────────────────────────────────
+	// ── etcd client + lock providers
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{"localhost:2379"},
 		DialTimeout: 5 * time.Second,
@@ -84,7 +86,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// ── Step 1: Client A acquires the lock ────────────────────────────────────
+	// ── Step 1: Client A acquires the lock
 	log.Println("Client A: acquiring lock …")
 	grantA, err := providerA.Lock(ctx)
 	if err != nil {
@@ -92,7 +94,7 @@ func main() {
 	}
 	log.Printf("Client A: lock acquired  fencing_token=%d  TTL=5s", grantA.FencingToken)
 
-	// ── Step 2: Client B waits for the lock in a goroutine ───────────────────
+	// ── Step 2: Client B waits for the lock in a goroutine
 	bWritten := make(chan struct{})
 	go func() {
 		log.Println("Client B: waiting for the lock …")
@@ -113,18 +115,18 @@ func main() {
 		}
 	}()
 
-	// ── Step 3: Client A gets stuck ───────────────────────────────────────────
+	// ── Step 3: Client A gets stuck
 	// cancelA stops the keepalive goroutine; etcd expires the lease after 5s,
 	// which unblocks Client B.
 	log.Println("Client A: got stuck (keepalives stopped — lease expires in 5s) …")
 	cancelA()
 
-	// ── Step 4: Wait for Client B to write ────────────────────────────────────
+	// ── Step 4: Wait for Client B to write
 	// Blocks until B has acquired the lock and advanced the resource's
 	// high-water mark to its (higher) fencing token.
 	<-bWritten
 
-	// ── Step 5: Client A wakes up and tries to write ──────────────────────────
+	// ── Step 5: Client A wakes up and tries to write
 	// A's grant still holds the old token in memory, but the resource server's
 	// high-water mark is now higher. The server rejects the RPC.
 	log.Println("Client A: woke up — calling Resource/Write with stale token …")

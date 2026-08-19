@@ -2,7 +2,10 @@ package etcd
 
 import (
 	"context"
+	"fmt"
 	"time"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 // ProviderOption configures a Provider.
@@ -40,4 +43,25 @@ func WithDefaultTTL(d time.Duration) ProviderOption {
 	return func(o *providerOptions) {
 		o.cfg.DefaultTTL = d
 	}
+}
+
+// newProviderSession resolves opts and establishes a leased session for key,
+// clamping the effective TTL to a minimum of 5 seconds regardless of the
+// value passed via WithDefaultTTL.
+func newProviderSession(client *clientv3.Client, key string, opts ...ProviderOption) (*session, error) {
+	o := defaultProviderOptions()
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	ttlSecs := int(o.cfg.defaultTTL().Seconds())
+	if ttlSecs < 5 {
+		ttlSecs = 5
+	}
+
+	s, err := newSession(o.ctx, client, withTTL(ttlSecs))
+	if err != nil {
+		return nil, fmt.Errorf("etcd provider: create session for %q: %w", key, err)
+	}
+	return s, nil
 }

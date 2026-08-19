@@ -7,11 +7,11 @@
 //
 // Run the resource server:
 //
-//	go run ./examples/http/resource
+//	go run ./examples/lock/http/resource
 //
 // Then run the client in a separate terminal:
 //
-//	go run ./examples/http/client
+//	go run ./examples/lock/http/client
 //
 // Or test manually with curl (first request sets high-water to 42, second with
 // 41 is rejected):
@@ -26,7 +26,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/ahrtr/disco/lock/guard"
+	"github.com/ahrtr/disco/fencing/guard"
 )
 
 func main() {
