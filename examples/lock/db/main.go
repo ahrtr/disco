@@ -8,6 +8,23 @@
 // production replace the in-memory implementation with a real SQL database;
 // the comments in Database.Write show the equivalent SQL pattern.
 //
+// When this pattern is actually warranted: a database's native concurrency
+// control (row locks, SELECT ... FOR UPDATE, serializable transactions)
+// only serializes access that is concurrent at the DB engine. It does
+// nothing for the zombie scenario below, because by the time Client A wakes
+// up there is no contention left to arbitrate — B's write already committed,
+// and A's stale write arrives afterward as an ordinary, uncontended
+// statement. The database has no way to know A's authorization already
+// expired; a fencing token gives it one. If the only coordination need is
+// serializing writes from directly-connected app instances to one database,
+// a unique constraint, SELECT ... FOR UPDATE, or an app-managed optimistic
+// concurrency column is usually simpler and sufficient — reach for an
+// external lock like this when the database is one of several resources
+// gated by the same authorization, or when the "who's currently allowed to
+// act" decision is inherently made outside the database (e.g. leader
+// election among service replicas, or multiple DB shards/replicas that
+// don't share a transaction manager).
+//
 // Scenario:
 //  1. Client A acquires the lock with a 5s TTL.
 //  2. Client A gets stuck — keepalives stop, etcd expires the lease after 5s.
