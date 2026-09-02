@@ -1,9 +1,10 @@
 # disco
 
 disco is a Go library for distributed coordination. It provides lease-based
-distributed locks and leader election backed by etcd, with built-in fencing
-token support to guarantee that stale owners — clients or leaders whose lease
-has already expired — can never corrupt a shared resource.
+distributed locks, read/write locks, and leader election backed by etcd,
+with built-in fencing token support to guarantee that stale owners — clients
+or leaders whose lease has already expired — can never corrupt a shared
+resource.
 
 The core problem disco solves: a process can acquire a lock or win a leader
 election, get paused (long GC pause, network partition, VM suspend, etc.), and
@@ -14,20 +15,20 @@ any write whose token is lower than the highest it has already accepted, so
 the zombie's write is safely rejected regardless of how long it was paused.
 
 disco is designed to be extensible. Each primitive is abstracted behind its
-own interface — `lock.Service` for mutual exclusion, `election.Service` for
-leader election — and both share `provider/etcd` as their first backend
-implementation, with ZooKeeper and Redis planned. The `provider` package is
-shared across features, so future coordination primitives (barriers, etc.)
-can reuse the same backend.
+own interface — `lock.Service` for mutual exclusion, `rwlock.Service` for
+read/write locking, `election.Service` for leader election — and all three
+share `provider/etcd` as their first backend implementation, with ZooKeeper
+and Redis planned. The `provider` package is shared across features, so
+future coordination primitives (barriers, etc.) can reuse the same backend.
 
 ## Three-party contract
 
 Safety is a shared responsibility across three parties. This contract is
-identical for both primitives — only the vocabulary changes (lock holder vs.
-leader):
+identical across all three primitives — only the vocabulary changes (lock
+holder vs. leader vs. reader/writer):
 
-- The **coordination service** (`lock.Service` or `election.Service`) is only responsible for assigning who is the latest owner.
-- The **client** (lock holder or elected leader) must attach the fencing token to every request it sends to a guarded resource.
+- The **coordination service** (`lock.Service`, `rwlock.Service`, or `election.Service`) is only responsible for assigning who is the latest owner.
+- The **client** (lock holder, rwlock holder, or elected leader) must attach the fencing token to every request it sends to a guarded resource.
 - The **resource** must reject stale owners by comparing the fencing token.
 
 Each party has exactly one responsibility. The guarantee only holds when all three honour their part.
@@ -72,8 +73,9 @@ if `token >= mark` the request is accepted and the mark advances; if
 ```
 disco/
 ├── lock/                   # Distributed lock — Service interface, Grant, errors
+├── rwlock/                 # Distributed read/write lock — Service interface, Grant, errors
 ├── election/               # Leader election — Service interface, Leadership, errors
-├── fencing/                # Token type + HTTP/gRPC transport helpers (shared by lock and election)
+├── fencing/                # Token type + HTTP/gRPC transport helpers (shared by lock, rwlock, and election)
 │   └── guard/              # Server-side validator: high-water mark, HTTP middleware, gRPC interceptors
 ├── provider/               # Backend implementations (shared across features)
 │   └── etcd/               # etcd backend; zookeeper/redis planned
@@ -87,6 +89,8 @@ disco/
     │       ├── pb/         # gRPC service definition (JSON codec, no protoc required)
     │       ├── resource/   # gRPC resource server protected by guard interceptor
     │       └── client/     # gRPC client: zombie scenario over gRPC
+    ├── rwlock/
+    │   └── basic/          # Concurrent readers, an exclusive writer, and a writer zombie/fencing handoff
     └── election/
         └── basic/          # Leader election, failover, and fencing token handoff between leaders
 ```
@@ -96,6 +100,12 @@ disco/
 > extracted behind the `lock.Service`/`election.Service` interfaces, wired
 > into disco's session/keepalive and fencing-token model, and adjusted in
 > places (e.g. cleanup on a failed campaign) to close gaps in the original.
+> `rwlock`'s algorithm follows etcd's own
+> `client/v3/experimental/recipes.RWMutex` the same way — readers and
+> writers each register a key in their own sub-namespace under the lock
+> prefix, and reuse the exact same wait-for-predecessors primitive
+> `lock.Service`'s mutex already needed, just scoped to a different prefix
+> depending on the caller's role.
 
 ## How fencing tokens work
 
@@ -156,6 +166,50 @@ fencing.InjectHTTP(req, grant.Token())
 
 // For gRPC:
 outCtx := metadata.NewOutgoingContext(ctx, fencing.ToGRPCMetadata(grant.Token()))
+```
+
+### Read/write lock (client side)
+
+```go
+import (
+    "errors"
+    "log"
+
+    clientv3 "go.etcd.io/etcd/client/v3"
+    etcdprovider "github.com/ahrtr/disco/provider/etcd"
+    "github.com/ahrtr/disco/rwlock"
+)
+
+cli, _ := clientv3.New(clientv3.Config{Endpoints: []string{"localhost:2379"}})
+defer cli.Close()
+
+svc, _ := etcdprovider.NewRWLock(cli, "/rwlocks/my-resource")
+defer svc.Close()
+
+go func() {
+    <-svc.Done()
+    log.Printf("rwlock lost: %v", svc.Err())
+}()
+
+// Concurrent readers never block each other...
+grant, err := svc.RLock(ctx)
+if err != nil { ... }
+defer svc.RUnlock(ctx)
+
+// ...but Lock blocks until every reader and writer registered before it
+// has released, and RLock blocks until every writer registered before it
+// has released. Both return a Grant with a fencing token, exactly like
+// lock.Service — concurrent readers all wait for the same last writer to
+// release before proceeding, so they hold identical tokens.
+wgrant, err := svc.Lock(ctx)
+if err != nil { ... }
+defer svc.Unlock(ctx)
+
+// TryLock/TryRLock attempt the same thing without blocking, returning
+// rwlock.ErrRWLockTaken immediately if something is in the way.
+if _, err := svc.TryLock(ctx); errors.Is(err, rwlock.ErrRWLockTaken) {
+    // held by someone else right now — try again later
+}
 ```
 
 ### Leader election (client side)
@@ -227,14 +281,14 @@ if err := g.Check(incomingToken); err != nil {
 
 ## Key design decisions
 
-| Decision                                   | Rationale                                                                                                                                                                                                                                    |
-|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Cluster revision as lock fencing token     | etcd cluster revision is globally ordered and increases on every write; the revision recorded when the lock is acquired is always strictly higher than any previous acquisition                                                              |
-| `CreateRevision` as election fencing token | A candidate's key can be created at any time and simply queues up; it's only recognized as leader once every lower-`CreateRevision` key has been removed, so each leadership term's token is always strictly higher than the one it replaced |
-| Provider manages keepalive                 | The session's keepalive goroutine runs internally; callers watch `svc.Done()` instead of calling `Renew()`                                                                                                                                   |
-| `Guard` high-water mark                    | Atomic CAS loop with no locks; accepts `token >= mark`, rejects `token < mark`; shared by lock and election since it only validates `fencing.Token`                                                                                          |
-| Caller-owned etcd client                   | The caller creates, configures, and closes the etcd client; the provider never closes it                                                                                                                                                     |
-| No `init()` auto-registration              | Providers are constructed explicitly; no hidden init-time side effects                                                                                                                                                                       |
+| Decision                                                   | Rationale                                                                                                                                                                                                                                                                                         |
+|------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Cluster revision as lock fencing token                     | etcd cluster revision is globally ordered and increases on every write; the revision recorded when the lock is acquired is always strictly higher than any previous acquisition                                                                                                                   |
+| `CreateRevision` as election fencing token                 | A candidate's key can be created at any time and simply queues up; it's only recognized as leader once every lower-`CreateRevision` key has been removed, so each leadership term's token is always strictly higher than the one it replaced                                                      |
+| Provider manages keepalive                                 | The session's keepalive goroutine runs internally; callers watch `svc.Done()` instead of calling `Renew()`                                                                                                                                                                                        |
+| `Guard` high-water mark                                    | Atomic CAS loop with no locks; accepts `token >= mark`, rejects `token < mark`; shared by lock and election since it only validates `fencing.Token`                                                                                                                                               |
+| Caller-owned etcd client                                   | The caller creates, configures, and closes the etcd client; the provider never closes it                                                                                                                                                                                                          |
+| No `init()` auto-registration                              | Providers are constructed explicitly; no hidden init-time side effects                                                                                                                                                                                                                            |
 
 ## Running examples
 
@@ -257,4 +311,8 @@ go run ./examples/lock/grpc/client
 
 # Leader election, failover, and fencing token handoff between leaders:
 go run ./examples/election/basic
+
+# Read/write lock: concurrent readers, an exclusive writer, and a writer
+# zombie/fencing handoff:
+go run ./examples/rwlock/basic
 ```
