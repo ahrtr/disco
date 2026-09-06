@@ -1,5 +1,5 @@
-// Package etcd implements lock.Service using etcd as the distributed lock
-// backend.
+// Package etcd implements lock.Service, rwlock.Service, semaphore.Service,
+// and election.Service using etcd as the distributed coordination backend.
 //
 // Locking strategy
 //
@@ -9,13 +9,19 @@
 // protocol: clients race to put a key under the lock prefix; the holder with
 // the lowest create-revision wins.
 //
+// NewSemaphore generalizes the same protocol from a single owner to a fixed
+// number of permits: an acquirer holds a permit as long as at most limit
+// keys are registered under the prefix, and one waiting to acquire blocks
+// only until enough predecessors — keys registered before its own — have
+// released, rather than waiting for every one of them.
+//
 // Fencing token
 //
 // The fencing token is the etcd cluster revision recorded in the response
-// header at the moment the lock is acquired. This value is a global,
-// monotonically increasing integer that advances on every write to the cluster,
-// so every successful lock acquisition receives a strictly higher token than
-// any previous acquisition.
+// header at the moment the lock or permit is acquired. This value is a
+// global, monotonically increasing integer that advances on every write to
+// the cluster, so every successful acquisition receives a strictly higher
+// token than any previous one.
 //
 // Keepalive
 //
