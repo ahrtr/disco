@@ -22,6 +22,13 @@ as their first backend implementation, with ZooKeeper and Redis planned.
 The `provider` package is shared across features, so future coordination
 primitives (barriers, etc.) can reuse the same backend.
 
+## Supported primitives
+
+- **Lock** ([`lock.Service`](lock/service.go)) — exclusive mutual exclusion: only one holder at a time.
+- **RWLock** ([`rwlock.Service`](rwlock/service.go)) — read/write lock: any number of concurrent readers, or one exclusive writer.
+- **Semaphore** ([`semaphore.Service`](semaphore/service.go)) — counting semaphore: up to a fixed number of concurrent permit holders.
+- **Election** ([`election.Service`](election/service.go)) — leader election: candidates campaign, one becomes leader, others can passively observe who currently holds leadership.
+
 ## Three-party contract
 
 Safety is a shared responsibility across three parties. This contract is
