@@ -15,8 +15,10 @@ func InjectHTTP(req *http.Request, t Token) {
 }
 
 // ExtractHTTP reads the fencing token from an incoming HTTP request.
-// Returns ErrNoToken if the header is absent and a wrapped error if the value
-// cannot be parsed as an int64.
+// Returns ErrNoToken if the header is absent, literally "0" (Zero is never
+// a real token — see its doc comment — so a literal zero is treated the
+// same as no header at all), and a wrapped error if the value cannot be
+// parsed as an int64.
 func ExtractHTTP(r *http.Request) (Token, error) {
 	v := r.Header.Get(HTTPHeader)
 	if v == "" {
@@ -25,6 +27,9 @@ func ExtractHTTP(r *http.Request) (Token, error) {
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
 		return Zero, fmt.Errorf("fencing: invalid token %q: %w", v, err)
+	}
+	if Token(n) == Zero {
+		return Zero, ErrNoToken
 	}
 	return Token(n), nil
 }

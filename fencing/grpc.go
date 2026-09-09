@@ -34,5 +34,10 @@ func FromGRPCContext(ctx context.Context) (Token, error) {
 	if err != nil {
 		return Zero, fmt.Errorf("fencing: invalid token %q: %w", vals[0], err)
 	}
+	if Token(n) == Zero {
+		// Zero is never a real token (see its doc comment) — treat a
+		// literal zero the same as no metadata key at all.
+		return Zero, ErrNoToken
+	}
 	return Token(n), nil
 }

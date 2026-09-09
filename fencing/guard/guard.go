@@ -32,7 +32,10 @@ func WithInitialToken(token fencing.Token) Option {
 }
 
 // New returns a ready-to-use Guard. Without options the high-water mark
-// starts at zero, which accepts any valid token on the first request.
+// starts at zero, which accepts any real (non-zero) token on the first
+// request — Check rejects a literal zero token unconditionally, so this
+// doesn't mean a request carrying no genuine fencing credential is ever
+// treated as validly fenced.
 func New(opts ...Option) *Guard {
 	g := &Guard{}
 	for _, opt := range opts {
@@ -45,10 +48,20 @@ func New(opts ...Option) *Guard {
 //
 // It returns nil when token >= high-water mark, advancing the mark when
 // token > high-water mark. It returns fencing.ErrTokenStale when token is
-// strictly lower than the current high-water mark.
+// strictly lower than the current high-water mark. It returns
+// fencing.ErrNoToken if token is fencing.Zero: no backend ever issues a
+// zero token (see its doc comment), so on a fresh, unseeded Guard (whose
+// high-water mark also starts at zero) a caller that never actually
+// acquired a lock/leadership would otherwise pass unchecked — this
+// rejects that case explicitly rather than relying on ExtractHTTP/
+// FromGRPCContext to have already filtered it out upstream, since Check
+// itself is public and can be called directly.
 //
 // Check is safe for concurrent use from multiple goroutines.
 func (g *Guard) Check(token fencing.Token) error {
+	if token == fencing.Zero {
+		return fencing.ErrNoToken
+	}
 	t := int64(token)
 	for {
 		cur := g.highWater.Load()
