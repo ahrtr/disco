@@ -88,6 +88,7 @@ disco/
 │   └── guard/              # Server-side validator: high-water mark, HTTP middleware, gRPC interceptors
 ├── provider/               # Backend implementations (shared across features)
 │   └── etcd/               # etcd backend; zookeeper/redis planned
+├── server/                 # discod — a single embedded-etcd binary for local dev/testing, see server/README.md
 └── examples/
     ├── lock/
     │   ├── db/             # Direct DB protection: fencing token stored and checked inside the DB
@@ -349,12 +350,24 @@ if err := g.Check(incomingToken); err != nil {
 
 ## Running examples
 
+All examples talk to etcd's client API on `localhost:2379`, so start
+something there first — either a real etcd cluster, or this repo's own
+[`discod`](server/README.md) (a single embedded-etcd binary, handy for
+local dev/testing without Docker):
+
 ```bash
-# Start etcd (Docker):
+# Option A — start etcd (Docker, runs in the background thanks to -d,
+# so the examples below can run in the same terminal):
 docker run -d -p 2379:2379 gcr.io/etcd-development/etcd:v3.7.1 \
   etcd --advertise-client-urls http://0.0.0.0:2379 \
        --listen-client-urls http://0.0.0.0:2379
 
+# Option B — start discod instead (runs in the foreground, so run the
+# examples below in another terminal):
+go run ./server/src/cmd/discod
+```
+
+```bash
 # Direct DB protection (fencing token stored inside the database):
 go run ./examples/lock/db
 
